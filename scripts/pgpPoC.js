@@ -1,6 +1,3 @@
-const openpgp = require('openpgp');
-openpgp.initWorker({path: 'openpgp.worker.js'});
-
 let passwordAlice = 'alicesSecret';
 let passwordBob = 'bobsSecret';
 
