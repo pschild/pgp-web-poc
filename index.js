@@ -1,7 +1,18 @@
-const fs = require('fs');
 const openpgp = require('openpgp');
-
 openpgp.initWorker({path: 'openpgp.worker.js'});
+
+let passwordAlice = 'alicesSecret';
+let passwordBob = 'bobsSecret';
+
+let keysAlice = {
+    privateKey: undefined,
+    publicKey: undefined
+};
+
+let keysBob = {
+    privateKey: undefined,
+    publicKey: undefined
+};
 
 function generateKeyPair(name, password) {
     let options = {
@@ -10,62 +21,84 @@ function generateKeyPair(name, password) {
         passphrase: password
     };
 
-    openpgp.generateKey(options).then((key) => {
-        let privkey = key.privateKeyArmored;
-        fs.writeFileSync(`privkey_${name}`, privkey);
-
-        let pubkey = key.publicKeyArmored;
-        fs.writeFileSync(`pubkey_${name}`, pubkey);
-
-        console.log(`generated key pair for ${name}!`);
-    });
+    return openpgp.generateKey(options);
 }
 
-function encryptMessage(sender, senderPassword, receiver, content) {
-    let publicKey = fs.readFileSync(`./pubkey_${receiver}`, 'utf8');
-    let privateKey = fs.readFileSync(`./privkey_${sender}`, 'utf8');
-    let publicKeys = openpgp.key.readArmored(publicKey).keys;
-    let privateKeys = openpgp.key.readArmored(privateKey).keys;
+function encrypt(senderPrivateKey, senderPassword, receiverPublicKey, message) {
+    let publicKeys = openpgp.key.readArmored(receiverPublicKey).keys;
 
-    // decrypt the private key with password
-    let success = privateKeys[0].decrypt(senderPassword);
+    let privateKeys = openpgp.key.readArmored(senderPrivateKey).keys;
+    privateKeys[0].decrypt(senderPassword);
 
     let options = {
-        data: content,
-        publicKeys: publicKeys
-        /*, privateKeys: privateKeys*/ // when privateKeys is filled, the message will be signed. Then decryption is not (yet) possible in Android
+        data: message,
+        publicKeys: publicKeys,
+        privateKeys: privateKeys // for signing the message (optional)
     };
 
-    openpgp.encrypt(options).then((ciphertext) => {
-        let encryptedData = ciphertext.data;
-        let fileName = `msg_${sender}_to_${receiver}_${new Date().getTime()}`;
-        fs.writeFileSync(fileName, encryptedData);
-        console.log(fileName);
-    });
+    return openpgp.encrypt(options)
+        .then((encryptedMessageObject) => {
+            return encryptedMessageObject.data;
+        });
 }
 
-function decryptMessage(receiver, receiverPassword, sender, msgFileName) {
-    let publicKey = fs.readFileSync(`./pubkey_${sender}`, 'utf8');
-    let privateKey = fs.readFileSync(`./privkey_${receiver}`, 'utf8');
-    let publicKeys = openpgp.key.readArmored(publicKey).keys;
-    let privateKeys = openpgp.key.readArmored(privateKey).keys;
+function decrypt(receiverPrivateKey, receiverPassword, senderPublicKey, encryptedMessage) {
+    let publicKeys = openpgp.key.readArmored(senderPublicKey).keys;
 
-    // decrypt the private key with password
-    let success = privateKeys[0].decrypt(receiverPassword);
+    let privateKeys = openpgp.key.readArmored(receiverPrivateKey).keys;
+    privateKeys[0].decrypt(receiverPassword);
 
-    let encryptedMessage = fs.readFileSync(`./${msgFileName}`, 'utf8');
     let options = {
         message: openpgp.message.readArmored(encryptedMessage),
-        publicKeys: publicKeys,
+        publicKeys: publicKeys, // for checking the signature (optional)
         privateKey: privateKeys[0]
     };
 
-    openpgp.decrypt(options).then((plaintext) => {
-        console.log(plaintext.data);
-    });
+    return openpgp.decrypt(options)
+        .then((plaintextObject) => {
+            return plaintextObject.data;
+        });
 }
 
-generateKeyPair('alice', 'alice');
-// generateKeyPair('bob', 'bob');
-// encryptMessage('alice', 'alice', 'bob', 'Hi Bob! How are you?');
-// decryptMessage('alice', 'alice', 'bob', 'enc');
+Promise.resolve()
+    .then(() => {
+        console.log('1) Alice: Generating new key pair...');
+        return generateKeyPair('alice', passwordAlice);
+    })
+    .then((keyPair) => {
+        keysAlice.privateKey = keyPair.privateKeyArmored;
+        keysAlice.publicKey = keyPair.publicKeyArmored;
+        console.log('Done!');
+    })
+    .then(() => {
+        console.log('2) Bob: Generating new key pair...');
+        return generateKeyPair('bob', passwordBob);
+    })
+    .then((keyPair) => {
+        keysBob.privateKey = keyPair.privateKeyArmored;
+        keysBob.publicKey = keyPair.publicKeyArmored;
+        console.log('Done!');
+    })
+    .then(() => {
+        console.log('3) Alice: Encrypting message for bob...');
+        return encrypt(keysAlice.privateKey, passwordAlice, keysBob.publicKey, 'Hi Bob, this is Alice! How are you?');
+    }).then((encryptedMessage) => {
+        console.log('Done! =>', encryptedMessage.substr(0, 110) + '...');
+        return encryptedMessage;
+    }).then((encryptedMessage) => {
+        console.log('4) Bob: Decrypting alice\'s message...');
+        return decrypt(keysBob.privateKey, passwordBob, keysAlice.publicKey, encryptedMessage);
+    }).then((plaintext) => {
+        console.log('Done! =>', plaintext);
+    }).then(() => {
+        console.log('5) Bob: Encrypting message for alice...');
+        return encrypt(keysBob.privateKey, passwordBob, keysAlice.publicKey, 'Hi Alice, this is Bob! I\'m fine!');
+    }).then((encryptedMessage) => {
+        console.log('Done! =>', encryptedMessage.substr(0, 110) + '...');
+        return encryptedMessage;
+    }).then((encryptedMessage) => {
+        console.log('6) Alice: Decrypting bob\'s message...');
+        return decrypt(keysAlice.privateKey, passwordAlice, keysBob.publicKey, encryptedMessage);
+    }).then((plaintext) => {
+        console.log('Done! =>', plaintext);
+    });
