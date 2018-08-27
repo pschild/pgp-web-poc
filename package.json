@@ -8,8 +8,8 @@
   "author": "Philippe Schild",
   "license": "ISC",
   "dependencies": {
-    "openpgp": "^2.6.2",
-    "http-server": "^0.11.1"
+    "http-server": "^0.11.1",
+    "openpgp": "^4.0.0"
   },
   "devDependencies": {}
 }

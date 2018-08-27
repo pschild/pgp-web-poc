@@ -21,16 +21,16 @@ function generateKeyPair(name, password) {
     return openpgp.generateKey(options);
 }
 
-function encrypt(senderPrivateKey, senderPassword, receiverPublicKey, message) {
-    let publicKeys = openpgp.key.readArmored(receiverPublicKey).keys;
+async function encrypt(senderPrivateKey, senderPassword, receiverPublicKey, message) {
+    let publicKeys = (await openpgp.key.readArmored(receiverPublicKey)).keys;
 
-    let privateKeys = openpgp.key.readArmored(senderPrivateKey).keys;
-    privateKeys[0].decrypt(senderPassword);
+    let privKeyObj = (await openpgp.key.readArmored(senderPrivateKey)).keys[0];
+    await privKeyObj.decrypt(senderPassword);
 
     let options = {
-        data: message,
+        message: openpgp.message.fromText(message),
         publicKeys: publicKeys,
-        privateKeys: privateKeys // for signing the message (optional)
+        privateKeys: [privKeyObj] // for signing the message (optional)
     };
 
     return openpgp.encrypt(options)
@@ -39,16 +39,16 @@ function encrypt(senderPrivateKey, senderPassword, receiverPublicKey, message) {
         });
 }
 
-function decrypt(receiverPrivateKey, receiverPassword, senderPublicKey, encryptedMessage) {
-    let publicKeys = openpgp.key.readArmored(senderPublicKey).keys;
+async function decrypt(receiverPrivateKey, receiverPassword, senderPublicKey, encryptedMessage) {
+    let publicKeys = (await openpgp.key.readArmored(senderPublicKey)).keys;
 
-    let privateKeys = openpgp.key.readArmored(receiverPrivateKey).keys;
-    privateKeys[0].decrypt(receiverPassword);
+    let privKeyObj = (await openpgp.key.readArmored(receiverPrivateKey)).keys[0];
+    await privKeyObj.decrypt(receiverPassword);
 
     let options = {
-        message: openpgp.message.readArmored(encryptedMessage),
+        message: await openpgp.message.readArmored(encryptedMessage),
         publicKeys: publicKeys, // for checking the signature (optional)
-        privateKey: privateKeys[0]
+        privateKeys: [privKeyObj]
     };
 
     return openpgp.decrypt(options)
